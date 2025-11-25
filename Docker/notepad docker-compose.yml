@@ -1,0 +1,20 @@
+services:
+  drupal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drupal_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./drupal-data:/var/www/html/sites/default/files
+    environment:
+      # Point to your AWS RDS database
+      DRUPAL_DATABASE_HOST: drupal-ha-db.c8xmgys866me.us-east-1.rds.amazonaws.com
+      DRUPAL_DATABASE_PORT: 3306
+      DRUPAL_DATABASE_NAME: drupal
+      DRUPAL_DATABASE_USERNAME: drupaladmin
+      DRUPAL_DATABASE_PASSWORD: ChangeThisPassword123!
+    restart: unless-stopped
+
+# Note: No local database - using AWS RDS instead

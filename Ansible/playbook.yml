@@ -1,0 +1,131 @@
+---
+- name: Complete Drupal Files Reinstallation
+  hosts: drupal_servers
+  become: yes
+  
+  tasks:
+    - name: Stop Apache
+      systemd:
+        name: httpd
+        state: stopped
+
+    - name: Backup current installation (if any)
+      shell: |
+        if [ -d /var/www/html_backup ]; then
+          rm -rf /var/www/html_backup
+        fi
+        if [ "$(ls -A /var/www/html)" ]; then
+          mv /var/www/html /var/www/html_backup
+          mkdir -p /var/www/html
+        fi
+      args:
+        warn: false
+
+    - name: Ensure html directory exists and is empty
+      file:
+        path: /var/www/html
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0755'
+
+    - name: Remove any leftover files
+      shell: rm -rf /var/www/html/*
+      args:
+        warn: false
+
+    - name: Download Drupal 10.2.0
+      get_url:
+        url: "https://ftp.drupal.org/files/projects/drupal-10.2.0.tar.gz"
+        dest: /tmp/drupal-10.2.0.tar.gz
+        timeout: 120
+        force: yes
+
+    - name: Verify download
+      stat:
+        path: /tmp/drupal-10.2.0.tar.gz
+      register: drupal_download
+
+    - name: Show download status
+      debug:
+        msg: "Drupal tarball downloaded: {{ drupal_download.stat.exists }}, Size: {{ drupal_download.stat.size | default('N/A') }} bytes"
+
+    - name: Extract Drupal to /var/www/html
+      unarchive:
+        src: /tmp/drupal-10.2.0.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+        owner: apache
+        group: apache
+
+    - name: Verify critical Drupal files exist
+      stat:
+        path: "{{ item }}"
+      register: critical_files
+      loop:
+        - /var/www/html/index.php
+        - /var/www/html/sites/default/default.settings.php
+        - /var/www/html/.htaccess
+        - /var/www/html/core/install.php
+
+    - name: Display file verification
+      debug:
+        msg: "{{ item.item }}: {{ 'EXISTS' if item.stat.exists else 'MISSING' }}"
+      loop: "{{ critical_files.results }}"
+
+    - name: Create sites/default/files directory
+      file:
+        path: /var/www/html/sites/default/files
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0777'
+
+    - name: Copy default.settings.php to settings.php
+      copy:
+        src: /var/www/html/sites/default/default.settings.php
+        dest: /var/www/html/sites/default/settings.php
+        remote_src: yes
+        owner: apache
+        group: apache
+        mode: '0666'
+
+    - name: Set ownership on all Drupal files
+      file:
+        path: /var/www/html
+        owner: apache
+        group: apache
+        recurse: yes
+
+    - name: Configure SELinux for Drupal
+      shell: |
+        setsebool -P httpd_can_network_connect_db 1
+        setsebool -P httpd_unified 1
+        setsebool -P httpd_can_network_connect 1
+        chcon -R -t httpd_sys_rw_content_t /var/www/html/sites/default
+      ignore_errors: yes
+
+    - name: Start Apache
+      systemd:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Wait for Apache to be ready
+      wait_for:
+        port: 80
+        delay: 3
+        timeout: 30
+
+    - name: Test web server response
+      uri:
+        url: "http://localhost/"
+        return_content: yes
+        status_code: [200, 302]
+      register: web_test
+      ignore_errors: yes
+
+    - name: Show web test result
+      debug:
+        msg: "Web server status: {{ web_test.status | default('FAILED') }}"

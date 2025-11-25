@@ -1,0 +1,73 @@
+---
+- name: Fix Drupal Configuration
+  hosts: drupal_servers
+  become: yes
+  
+  tasks:
+    - name: Remove existing settings.php
+      file:
+        path: /var/www/html/sites/default/settings.php
+        state: absent
+
+    - name: Copy default settings
+      copy:
+        src: /var/www/html/sites/default/default.settings.php
+        dest: /var/www/html/sites/default/settings.php
+        remote_src: yes
+        owner: apache
+        group: apache
+        mode: '0666'
+
+    - name: Ensure sites/default/files directory exists
+      file:
+        path: /var/www/html/sites/default/files
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0775'
+
+    - name: Set permissions on Drupal root
+      file:
+        path: /var/www/html
+        owner: apache
+        group: apache
+        recurse: yes
+
+    - name: Configure SELinux contexts
+      shell: |
+        setsebool -P httpd_can_network_connect_db 1
+        setsebool -P httpd_unified 1
+        chcon -R -t httpd_sys_rw_content_t /var/www/html/sites/default/files
+        chcon -t httpd_sys_rw_content_t /var/www/html/sites/default/settings.php
+      ignore_errors: yes
+
+    - name: Create database configuration in settings.php
+      blockinfile:
+        path: /var/www/html/sites/default/settings.php
+        block: |
+          $databases['default']['default'] = array (
+            'database' => 'drupal',
+            'username' => 'drupaladmin',
+            'password' => 'ChangeThisPassword123!',
+            'host' => 'drupal-ha-db.c8xmgys866me.us-east-1.rds.amazonaws.com',
+            'port' => '3306',
+            'driver' => 'mysql',
+            'prefix' => '',
+            'collation' => 'utf8mb4_general_ci',
+          );
+          $settings['trusted_host_patterns'] = ['^.*$'];
+          $settings['hash_salt'] = 'random-hash-salt-' . bin2hex(random_bytes(32));
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+    - name: Restart Apache
+      systemd:
+        name: httpd
+        state: restarted
+
+    - name: Display Apache status
+      shell: systemctl status httpd | head -20
+      register: apache_status
+
+    - name: Show status
+      debug:
+        var: apache_status.stdout_lines

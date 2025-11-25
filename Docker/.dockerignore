@@ -1,0 +1,13 @@
+New-Item -Path ".dockerignore" -ItemType File -Force
+notepad .dockerignore
+```
+
+**Paste this:**
+```
+.git
+.gitignore
+README.md
+docker-compose.yml
+.env
+node_modules
+vendor

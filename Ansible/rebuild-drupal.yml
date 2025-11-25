@@ -1,0 +1,77 @@
+---
+- name: Rebuild Drupal Configuration
+  hosts: drupal_servers
+  become: yes
+  
+  tasks:
+    - name: Check if Drupal is installed
+      stat:
+        path: /var/www/html/sites/default/settings.php
+      register: settings_exists
+
+    - name: Remove settings.php to start fresh
+      file:
+        path: /var/www/html/sites/default/settings.php
+        state: absent
+
+    - name: Remove files directory
+      file:
+        path: /var/www/html/sites/default/files
+        state: absent
+
+    - name: Recreate files directory
+      file:
+        path: /var/www/html/sites/default/files
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0775'
+
+    - name: Copy fresh default.settings.php to settings.php
+      copy:
+        src: /var/www/html/sites/default/default.settings.php
+        dest: /var/www/html/sites/default/settings.php
+        remote_src: yes
+        owner: apache
+        group: apache
+        mode: '0666'
+
+    - name: Ensure all Drupal files have correct ownership
+      file:
+        path: /var/www/html
+        owner: apache
+        group: apache
+        recurse: yes
+
+    - name: Configure SELinux for Drupal
+      shell: |
+        setsebool -P httpd_can_network_connect_db 1
+        setsebool -P httpd_unified 1
+        setsebool -P httpd_can_network_connect 1
+        chcon -R -t httpd_sys_rw_content_t /var/www/html/sites/default
+      ignore_errors: yes
+
+    - name: Create a simple test page
+      copy:
+        dest: /var/www/html/test.html
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head><title>Test Page</title></head>
+          <body>
+            <h1>Apache is Working!</h1>
+            <p>If you see this, Apache is serving files correctly.</p>
+          </body>
+          </html>
+        owner: apache
+        group: apache
+
+    - name: Restart Apache again
+      systemd:
+        name: httpd
+        state: restarted
+
+    - name: Wait for Apache
+      wait_for:
+        port: 80
+        delay: 2

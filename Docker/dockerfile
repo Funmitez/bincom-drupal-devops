@@ -1,0 +1,50 @@
+# Use official PHP with Apache
+FROM php:8.1-apache
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
+    zip \
+    unzip \
+    mariadb-client \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PHP extensions required by Drupal
+RUN docker-php-ext-install \
+    pdo_mysql \
+    mysqli \
+    mbstring \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    opcache \
+    zip
+
+# Enable Apache modules
+RUN a2enmod rewrite headers
+
+# Download and install Drupal
+RUN curl -fSL "https://ftp.drupal.org/files/projects/drupal-10.2.0.tar.gz" -o drupal.tar.gz \
+    && tar -xzf drupal.tar.gz --strip-components=1 \
+    && rm drupal.tar.gz \
+    && chown -R www-data:www-data /var/www/html
+
+# Create sites/default/files directory
+RUN mkdir -p /var/www/html/sites/default/files \
+    && chmod 777 /var/www/html/sites/default/files
+
+# Expose port 80
+EXPOSE 80
+
+# Start Apache
+CMD ["apache2-foreground"]

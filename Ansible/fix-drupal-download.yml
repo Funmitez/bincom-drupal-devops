@@ -1,0 +1,97 @@
+---
+- name: Fix Drupal Installation
+  hosts: drupal_servers
+  become: yes
+  serial: 1
+  
+  tasks:
+    - name: Stop Apache
+      systemd:
+        name: httpd
+        state: stopped
+
+    - name: Backup old html directory
+      shell: |
+        if [ -d /var/www/html ]; then
+          mv /var/www/html /var/www/html_old_$(date +%s)
+        fi
+        mkdir -p /var/www/html
+
+    - name: Download Drupal using wget
+      shell: |
+        cd /var/www/html
+        wget -O drupal.tar.gz https://ftp.drupal.org/files/projects/drupal-10.2.0.tar.gz
+      args:
+        creates: /var/www/html/drupal.tar.gz
+
+    - name: Check download size
+      stat:
+        path: /var/www/html/drupal.tar.gz
+      register: tarball
+
+    - name: Show download info
+      debug:
+        msg: "Downloaded {{ tarball.stat.size }} bytes"
+
+    - name: Extract Drupal
+      shell: |
+        cd /var/www/html
+        tar -xzf drupal.tar.gz --strip-components=1
+        rm drupal.tar.gz
+
+    - name: Verify critical files
+      shell: |
+        if [ ! -f /var/www/html/sites/default/default.settings.php ]; then
+          echo "ERROR: default.settings.php not found!"
+          exit 1
+        fi
+        if [ ! -f /var/www/html/index.php ]; then
+          echo "ERROR: index.php not found!"
+          exit 1
+        fi
+        echo "All files present"
+      register: verify_result
+
+    - name: Show verification
+      debug:
+        var: verify_result.stdout
+
+    - name: Create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0777'
+      loop:
+        - /var/www/html/sites/default/files
+
+    - name: Copy settings file
+      shell: |
+        cp /var/www/html/sites/default/default.settings.php /var/www/html/sites/default/settings.php
+        chmod 666 /var/www/html/sites/default/settings.php
+
+    - name: Set all ownership
+      shell: chown -R apache:apache /var/www/html
+
+    - name: Configure SELinux
+      shell: |
+        setsebool -P httpd_can_network_connect_db 1
+        chcon -R -t httpd_sys_rw_content_t /var/www/html/sites/default
+      ignore_errors: yes
+
+    - name: Start Apache
+      systemd:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Test web server
+      uri:
+        url: http://localhost/
+        status_code: [200, 302]
+      register: web_result
+
+    - name: Show result
+      debug:
+        msg: "Web server responding: {{ web_result.status }}"

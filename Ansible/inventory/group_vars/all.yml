@@ -1,0 +1,15 @@
+---
+# Database Configuration
+db_host: "drupal-ha-db.c8xmgys866me.us-east-1.rds.amazonaws.com"
+db_port: "3306"
+db_name: "drupal"
+db_user: "drupaladmin"
+db_password: "ChangeThisPassword123!"
+
+# Drupal Configuration
+drupal_version: "10.2.0"
+drupal_site_name: "Bincom Drupal HA"
+drupal_install_dir: "/var/www/html"
+
+# Web Server Configuration
+document_root: "/var/www/html"

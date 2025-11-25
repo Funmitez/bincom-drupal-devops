@@ -1,0 +1,78 @@
+---
+- name: Fix Apache Routing and Drupal Configuration
+  hosts: drupal_servers
+  become: yes
+  
+  tasks:
+    - name: Ensure mod_rewrite is enabled
+      shell: |
+        if ! httpd -M | grep -q rewrite_module; then
+          echo "LoadModule rewrite_module modules/mod_rewrite.so" >> /etc/httpd/conf/httpd.conf
+        fi
+      register: rewrite_check
+
+    - name: Configure Apache for Drupal
+      blockinfile:
+        path: /etc/httpd/conf/httpd.conf
+        block: |
+          <Directory "/var/www/html">
+              Options Indexes FollowSymLinks
+              AllowOverride All
+              Require all granted
+          </Directory>
+        marker: "# {mark} DRUPAL APACHE CONFIG"
+        insertafter: "DocumentRoot"
+
+    - name: Verify .htaccess exists
+      stat:
+        path: /var/www/html/.htaccess
+      register: htaccess_check
+
+    - name: Copy .htaccess if missing
+      copy:
+        src: /var/www/html/.htaccess
+        dest: /var/www/html/.htaccess
+        remote_src: yes
+        force: no
+      when: not htaccess_check.stat.exists
+      ignore_errors: yes
+
+    - name: Download default .htaccess if still missing
+      get_url:
+        url: "https://git.drupalcode.org/project/drupal/-/raw/10.2.x/.htaccess"
+        dest: /var/www/html/.htaccess
+        owner: apache
+        group: apache
+        mode: '0644'
+      when: not htaccess_check.stat.exists
+
+    - name: Set proper permissions on .htaccess
+      file:
+        path: /var/www/html/.htaccess
+        owner: apache
+        group: apache
+        mode: '0644'
+
+    - name: Create robots.txt if missing
+      copy:
+        dest: /var/www/html/robots.txt
+        content: |
+          User-agent: *
+          Disallow: /
+        owner: apache
+        group: apache
+        mode: '0644'
+        force: no
+
+    - name: Restart Apache
+      systemd:
+        name: httpd
+        state: restarted
+
+    - name: Verify Apache modules
+      shell: httpd -M | grep -E 'rewrite|dir'
+      register: modules_check
+
+    - name: Show loaded modules
+      debug:
+        var: modules_check.stdout_lines
